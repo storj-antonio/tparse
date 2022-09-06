@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   build:
@@ -12,24 +13,30 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.16", "1.17", "1.18"]
+        go-version: [1.17, 1.18, 1.19.0-rc.2]
     env:
       VERBOSE: 1
 
     steps:
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v3
         with:
-          go-version: ${{ matrix.go }}
+          go-version: ${{ matrix.go-version }}
 
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Build
         run: go build -v .
 
-      - name: Run tests
-        run: go test -count=1 -race ./parse -json -cover | ./tparse -all -top
+      - name: Run tests with GITHUB_STEP_SUMMARY
+      # Note the use of  || true. This so the job doesn't fail at that line. We want to preserve -follow
+      # as part of the test output, but not output it to the summary page, which is done in the proceeding
+      # command when we parse the output.json file.
+        run: | 
+          go test -count=1 -race ./... -json -coverpkg github.com/mfridman/tparse/parse \
+            | tee output.json | ./tparse -notests -follow -all || true
+          ./tparse -format markdown -file output.json -all -slow 20 > $GITHUB_STEP_SUMMARY
 
       - name: Run tparse w/ std lib
-        run: go test -count=1 fmt strings bytes bufio crypto log mime sort time -json -cover | ./tparse -pass
+        run: go test -count=1 fmt strings bytes bufio crypto log mime sort time -json -cover | ./tparse -follow -all
